@@ -9,14 +9,15 @@ class ConvNet(object):
   """
   A three-layer convolutional network with the following architecture:
   
-  {conv -[spatial norm]- relu - 2x2 max pool} x N - {affine - [batch norm] - relu} x M - affine - softmax
+  {conv -[spatial norm]- relu - 2x2 max pool} x N - {affine - [batch norm] - relu - [dropout]} x M - affine - softmax
   The network operates on minibatches of data that have shape (N, C, H, W)
   consisting of N images, each with height H and width W and with C input
   channels.
   """
   
   def __init__(self, input_dim=(3, 32, 32), num_filters=[32], filter_size=7,
-               hidden_dims=[100], num_classes=10, weight_scale=1e-3, use_batchnorm=False, reg=0.0, dtype=np.float32):
+               hidden_dims=[100], num_classes=10, weight_scale=1e-3, use_batchnorm=False, 
+               dropout=0, reg=0.0, dtype=np.float32, seed=None):
     """
     Initialize a new network.
     
@@ -33,6 +34,7 @@ class ConvNet(object):
     - dtype: numpy datatype to use for computation.
     """
     self.use_batchnorm = use_batchnorm
+    self.use_dropout = dropout > 0
     self.reg = reg
     self.num_linear_layers = 1 + len(hidden_dims)
     self.num_conv_layers = 1 + len(num_filters)
@@ -86,6 +88,12 @@ class ConvNet(object):
     if self.use_batchnorm:
         self.bn_params = [{'mode': 'train'} for i in xrange(self.num_layers - 1)]   
     
+    self.dropout_param = {}
+    if self.use_dropout:
+      self.dropout_param = {'mode': 'train', 'p': dropout}
+      if seed is not None:
+        self.dropout_param['seed'] = seed
+    
     self.params['W' + str(self.num_layers)] = weight_scale * np.random.randn(hidden_dims[-1], num_classes)
     self.params['b' + str(self.num_layers)] = np.zeros(num_classes)
     
@@ -107,6 +115,8 @@ class ConvNet(object):
     conv_param = self.conv_param
     # pass pool_param to the forward pass for the max-pooling layer
     pool_param = self.pool_param
+    # pass dropout_param to the forward pass for the dropout layer
+    dropout_param = self.dropout_param
 
     scores = None
     ############################################################################
@@ -138,9 +148,15 @@ class ConvNet(object):
             gamma = self.params['gamma' + str(self.num_conv_layers + i)]
             beta = self.params['beta' + str(self.num_conv_layers + i)]
             bn_param = self.bn_params[self.num_conv_layers + i -1]
-            output, cache = affine_bn_relu_forward(output, Wi, bi, gamma, beta, bn_param)
+            if self.use_dropout:
+                output, cache = affine_bn_relu_dropout_forward(output, Wi, bi, gamma, beta, bn_param, dropout_param)
+            else:
+                output, cache = affine_bn_relu_forward(output, Wi, bi, gamma, beta, bn_param)
         else:
-            output, cache = affine_relu_forward(output, Wi, bi)
+            if self.use_dropout:
+                output, cache = affine_relu_dropout_forward(output, Wi, bi, dropout_param)
+            else:
+                output, cache = affine_relu_forward(output, Wi, bi)
         caches.append(cache)
     
     scores, cache_score = affine_forward(output, self.params['W' + str(self.num_layers)], self.params['b' + str(self.num_layers)])
@@ -162,11 +178,17 @@ class ConvNet(object):
     dx, grads['W' + str(self.num_layers)],  grads['b' + str(self.num_layers)] = affine_backward(dscores, cache_score) 
     for i in reversed(xrange(self.num_linear_layers-1)):
         if self.use_batchnorm:
-            dx, dw, db, dgamma, dbeta = affine_bn_relu_backward(dx, caches[self.num_conv_layers + i -1])
+            if self.use_dropout:
+                dx, dw, db, dgamma, dbeta = affine_bn_relu_dropout_backward(dx, caches[self.num_conv_layers + i -1])
+            else:
+                dx, dw, db, dgamma, dbeta = affine_bn_relu_backward(dx, caches[self.num_conv_layers + i -1])
             grads['gamma' + str(self.num_conv_layers + i)] = dgamma
             grads['beta' + str(self.num_conv_layers + i)] = dbeta
         else:
-            dx, dw, db = affine_relu_backward(dx, caches[self.num_conv_layers + i -1])
+            if self.use_dropout:
+                dx, dw, db = affine_relu_dropout_backward(dx, caches[self.num_conv_layers + i -1])
+            else:
+                dx, dw, db = affine_relu_backward(dx, caches[self.num_conv_layers + i -1])
         grads['W' + str(self.num_conv_layers + i)] = dw
         grads['b' + str(self.num_conv_layers + i)] = db
         

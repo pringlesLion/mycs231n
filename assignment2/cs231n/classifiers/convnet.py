@@ -54,18 +54,18 @@ class ConvNet(object):
     # of the output affine layer.                                              #
     ############################################################################
     C, H, W = input_dim
-    inputChannel = C
+    input_channel = C
     P = self.conv_param['pad']
     stride = self.conv_param['stride']
     
     
     for i in xrange(self.num_conv_layers-1):
-        self.params['W'+str(i+1)] = weight_scale * np.random.randn(num_filters[i], inputChannel, filter_size, filter_size)
+        self.params['W'+str(i+1)] = weight_scale * np.random.randn(num_filters[i], input_channel, filter_size, filter_size)
         self.params['b'+str(i+1)] = np.zeros(num_filters[i])
         if self.use_batchnorm:
             self.params['gamma' + str(i+1)] = np.ones(num_filters[i])
             self.params['beta' + str(i+1)] = np.zeros(num_filters[i])
-        inputChannel = num_filters[i]
+        input_channel = num_filters[i]
         #output height after conv layer 
         H = (H + 2 * P - filter_size) / stride + 1 
         W = (W + 2 * P - filter_size) / stride + 1 
@@ -73,13 +73,15 @@ class ConvNet(object):
         H = (H - 2) / 2 + 1 
         W = (W - 2) / 2 + 1
     
+    l_input_dim = input_channel * H * W
     for i in xrange(self.num_linear_layers-1):
-        self.params['W' + str(self.num_conv_layers + i)] = weight_scale * np.random.randn(inputChannel * H * W, hidden_dims[i])
+        self.params['W' + str(self.num_conv_layers + i)] = weight_scale * np.random.randn(l_input_dim, hidden_dims[i])
         self.params['b' + str(self.num_conv_layers + i)] = np.zeros(hidden_dims[i])
         if self.use_batchnorm:
             self.params['gamma' + str(self.num_conv_layers + i)] = np.ones(hidden_dims[i])
             self.params['beta' + str(self.num_conv_layers + i)] = np.zeros(hidden_dims[i])
-    
+        l_input_dim = hidden_dims[i]
+        
     self.bn_params = []
     if self.use_batchnorm:
         self.bn_params = [{'mode': 'train'} for i in xrange(self.num_layers - 1)]   
